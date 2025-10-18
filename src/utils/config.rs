@@ -1,3 +1,5 @@
+//! modified from shadowsocks-service/src/config.rs
+
 use cfg_if::cfg_if;
 use std::{
     fmt::{self, Debug, Display, Formatter},

@@ -1,16 +1,18 @@
+//! modified from shadowsocks-service/src/local/redir/tcprelay/sys/unix/bsd.rs
+
+use crate::utils::net::{AcceptOpts, is_dual_stack_addr, set_tcp_fastopen};
+use log::warn;
+use socket2::Protocol;
 use std::{
     io::{self, Error, ErrorKind},
     net::SocketAddr,
 };
-use log::warn;
-use crate::net::{AcceptOpts, is_dual_stack_addr, set_tcp_fastopen};
-use socket2::Protocol;
 use tokio::net::{TcpListener, TcpSocket, TcpStream};
 
 use crate::{
-    config::RedirType,
-    redir_ext::{TcpListenerRedirExt, TcpStreamRedirExt},
-    sys::set_ipv6_only,
+    redir::redir_ext::{TcpListenerRedirExt, TcpStreamRedirExt},
+    redir::sys::set_ipv6_only,
+    utils::config::RedirType,
 };
 
 impl TcpListenerRedirExt for TcpListener {
@@ -105,7 +107,7 @@ impl TcpStreamRedirExt for TcpStream {
         match ty {
             #[cfg(any(target_os = "freebsd", target_os = "macos", target_os = "ios"))]
             RedirType::PacketFilter => {
-                use crate::bsd_pf::PF;
+                use crate::redir::bsd_pf::PF;
 
                 let peer_addr = self.peer_addr()?;
                 let bind_addr = self.local_addr()?;

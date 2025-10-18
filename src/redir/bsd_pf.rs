@@ -1,4 +1,5 @@
 //! PacketFilter implementation for *BSD
+//! modified from shadowsocks-service/src/local/redir/sys/unix/bsd_pf.rs
 
 use std::{
     io::{self, Error, ErrorKind},
@@ -10,8 +11,8 @@ use std::{
 use cfg_if::cfg_if;
 use log::trace;
 use nix::ioctl_readwrite;
-use once_cell::sync::Lazy;
 use socket2::{Protocol, SockAddr};
+use std::sync::LazyLock;
 
 use super::pfvar::{PF_OUT, in_addr, in6_addr, pfioc_natlook, sockaddr_in, sockaddr_in6};
 #[cfg(any(target_os = "macos", target_os = "ios"))]
@@ -39,7 +40,11 @@ impl PacketFilter {
             }
 
             // Set CLOEXEC
-            let ret = libc::fcntl(fd, libc::F_SETFD, libc::fcntl(fd, libc::F_GETFD) | libc::FD_CLOEXEC);
+            let ret = libc::fcntl(
+                fd,
+                libc::F_SETFD,
+                libc::fcntl(fd, libc::F_GETFD) | libc::FD_CLOEXEC,
+            );
             if ret != 0 {
                 let err = Error::last_os_error();
                 let _ = libc::close(fd);
@@ -50,7 +55,12 @@ impl PacketFilter {
         }
     }
 
-    pub fn natlook(&self, bind_addr: &SocketAddr, peer_addr: &SocketAddr, proto: Protocol) -> io::Result<SocketAddr> {
+    pub fn natlook(
+        &self,
+        bind_addr: &SocketAddr,
+        peer_addr: &SocketAddr,
+        proto: Protocol,
+    ) -> io::Result<SocketAddr> {
         match proto {
             Protocol::TCP => self.tcp_natlook(bind_addr, peer_addr, proto),
             #[cfg(any(target_os = "macos", target_os = "ios"))]
@@ -59,7 +69,12 @@ impl PacketFilter {
         }
     }
 
-    fn tcp_natlook(&self, bind_addr: &SocketAddr, peer_addr: &SocketAddr, proto: Protocol) -> io::Result<SocketAddr> {
+    fn tcp_natlook(
+        &self,
+        bind_addr: &SocketAddr,
+        peer_addr: &SocketAddr,
+        proto: Protocol,
+    ) -> io::Result<SocketAddr> {
         trace!("PF natlook peer: {}, bind: {}", peer_addr, bind_addr);
 
         unsafe {
@@ -75,7 +90,10 @@ impl PacketFilter {
                     let addr: *const in_addr = ptr::addr_of!((*sockaddr).sin_addr) as *const _;
                     let port: libc::in_port_t = (*sockaddr).sin_port;
 
-                    ptr::write_unaligned::<in_addr>(ptr::addr_of_mut!(pnl.daddr.pfa) as *mut _, *addr);
+                    ptr::write_unaligned::<in_addr>(
+                        ptr::addr_of_mut!(pnl.daddr.pfa) as *mut _,
+                        *addr,
+                    );
 
                     cfg_if! {
                         if #[cfg(any(target_os = "macos", target_os = "ios"))] {
@@ -94,7 +112,10 @@ impl PacketFilter {
                     let addr: *const in6_addr = ptr::addr_of!((*sockaddr).sin6_addr) as *const _;
                     let port: libc::in_port_t = (*sockaddr).sin6_port;
 
-                    ptr::write_unaligned::<in6_addr>(ptr::addr_of_mut!(pnl.daddr.pfa) as *mut _, *addr);
+                    ptr::write_unaligned::<in6_addr>(
+                        ptr::addr_of_mut!(pnl.daddr.pfa) as *mut _,
+                        *addr,
+                    );
 
                     cfg_if! {
                         if #[cfg(any(target_os = "macos", target_os = "ios"))] {
@@ -109,7 +130,10 @@ impl PacketFilter {
             match *peer_addr {
                 SocketAddr::V4(ref v4) => {
                     if pnl.af != libc::AF_INET as libc::sa_family_t {
-                        return Err(Error::new(ErrorKind::InvalidInput, "client addr must be ipv4"));
+                        return Err(Error::new(
+                            ErrorKind::InvalidInput,
+                            "client addr must be ipv4",
+                        ));
                     }
 
                     let sockaddr = SockAddr::from(*v4);
@@ -118,7 +142,10 @@ impl PacketFilter {
                     let addr: *const in_addr = ptr::addr_of!((*sockaddr).sin_addr) as *const _;
                     let port: libc::in_port_t = (*sockaddr).sin_port;
 
-                    ptr::write_unaligned::<in_addr>(ptr::addr_of_mut!(pnl.saddr.pfa) as *mut _, *addr);
+                    ptr::write_unaligned::<in_addr>(
+                        ptr::addr_of_mut!(pnl.saddr.pfa) as *mut _,
+                        *addr,
+                    );
 
                     cfg_if! {
                         if #[cfg(any(target_os = "macos", target_os = "ios"))] {
@@ -130,7 +157,10 @@ impl PacketFilter {
                 }
                 SocketAddr::V6(ref v6) => {
                     if pnl.af != libc::AF_INET6 as libc::sa_family_t {
-                        return Err(Error::new(ErrorKind::InvalidInput, "client addr must be ipv6"));
+                        return Err(Error::new(
+                            ErrorKind::InvalidInput,
+                            "client addr must be ipv6",
+                        ));
                     }
 
                     let sockaddr = SockAddr::from(*v6);
@@ -139,7 +169,10 @@ impl PacketFilter {
                     let addr: *const in6_addr = ptr::addr_of!((*sockaddr).sin6_addr) as *const _;
                     let port: libc::in_port_t = (*sockaddr).sin6_port;
 
-                    ptr::write_unaligned::<in6_addr>(ptr::addr_of_mut!(pnl.saddr.pfa) as *mut _, *addr);
+                    ptr::write_unaligned::<in6_addr>(
+                        ptr::addr_of_mut!(pnl.saddr.pfa) as *mut _,
+                        *addr,
+                    );
 
                     cfg_if! {
                         if #[cfg(any(target_os = "macos", target_os = "ios"))] {
@@ -205,14 +238,19 @@ impl PacketFilter {
     }
 
     #[cfg(any(target_os = "macos", target_os = "ios"))]
-    fn udp_natlook(&self, bind_addr: &SocketAddr, peer_addr: &SocketAddr, _proto: Protocol) -> io::Result<SocketAddr> {
+    fn udp_natlook(
+        &self,
+        bind_addr: &SocketAddr,
+        peer_addr: &SocketAddr,
+        _proto: Protocol,
+    ) -> io::Result<SocketAddr> {
         unsafe {
             // Get all states
             // https://man.freebsd.org/cgi/man.cgi?query=pf&sektion=4&manpath=OpenBSD
             // DIOCGETSTATES
 
             let mut states: pfioc_states = mem::zeroed();
-            let mut states_buffer = vec![0u8; 8192];
+            let mut states_buffer = vec![0u8; 10485760];
 
             loop {
                 states.ps_len = states_buffer.len() as _;
@@ -231,6 +269,7 @@ impl PacketFilter {
                 // > quired to hold all state table entries
                 states_buffer.resize(states.ps_len as usize, 0);
             }
+            // println!("states size: {}", states.ps_len);
 
             let bind_addr_sockaddr = SockAddr::from(*bind_addr);
             let peer_addr_sockaddr = SockAddr::from(*peer_addr);
@@ -275,9 +314,9 @@ impl PacketFilter {
             }
 
             let states_count = states.ps_len as usize / mem::size_of::<pfsync_state>();
+            // println!("states count: {}", states_count);
             for i in 0..states_count {
                 let state = &*(states.ps_u.psu_states.add(i));
-
                 if state.proto == libc::IPPROTO_UDP as u8 {
                     cfg_if! {
                         if #[cfg(any(target_os = "macos", target_os = "ios"))] {
@@ -290,6 +329,75 @@ impl PacketFilter {
                             let actual_dst_port = state.gwy.port;
                         }
                     }
+                    // let (_, ext_gwy) = SockAddr::try_init(|sockaddr, len| {
+                    //     let addr = &mut *(sockaddr as *mut sockaddr_in);
+                    //     addr.sin_family = libc::AF_INET as libc::sa_family_t;
+                    //     ptr::write_unaligned::<in_addr>(
+                    //         ptr::addr_of_mut!(addr.sin_addr),
+                    //         ptr::read_unaligned::<in_addr>(
+                    //             ptr::addr_of!(state.ext_gwy.addr.pfa) as *const _
+                    //         ),
+                    //     );
+                    //     addr.sin_port = src_port as libc::in_port_t;
+                    //     println!("write src_port to ext_gwy: {}", addr.sin_port);
+
+                    //     ptr::write(len, mem::size_of::<sockaddr_in>() as libc::socklen_t);
+                    //     Ok(())
+                    // })
+                    // .unwrap();
+                    // let (_, lan) = SockAddr::try_init(|sockaddr, len| {
+                    //     let addr = &mut *(sockaddr as *mut sockaddr_in);
+                    //     addr.sin_family = libc::AF_INET as libc::sa_family_t;
+                    //     ptr::write_unaligned::<in_addr>(
+                    //         ptr::addr_of_mut!(addr.sin_addr),
+                    //         ptr::read_unaligned::<in_addr>(
+                    //             ptr::addr_of!(state.lan.addr.pfa) as *const _
+                    //         ),
+                    //     );
+                    //     addr.sin_port = state.lan.xport.port as libc::in_port_t;
+
+                    //     ptr::write(len, mem::size_of::<sockaddr_in>() as libc::socklen_t);
+                    //     Ok(())
+                    // })
+                    // .unwrap();
+                    // let (_, ext_lan) = SockAddr::try_init(|sockaddr, len| {
+                    //     let addr = &mut *(sockaddr as *mut sockaddr_in);
+                    //     addr.sin_family = libc::AF_INET as libc::sa_family_t;
+                    //     ptr::write_unaligned::<in_addr>(
+                    //         ptr::addr_of_mut!(addr.sin_addr),
+                    //         ptr::read_unaligned::<in_addr>(
+                    //             ptr::addr_of!(state.ext_lan.addr.pfa) as *const _
+                    //         ),
+                    //     );
+                    //     addr.sin_port = state.ext_lan.xport.port as libc::in_port_t;
+
+                    //     ptr::write(len, mem::size_of::<sockaddr_in>() as libc::socklen_t);
+                    //     Ok(())
+                    // })
+                    // .unwrap();
+                    // let (_, gwy) = SockAddr::try_init(|sockaddr, len| {
+                    //     let addr = &mut *(sockaddr as *mut sockaddr_in);
+                    //     addr.sin_family = libc::AF_INET as libc::sa_family_t;
+                    //     ptr::write_unaligned::<in_addr>(
+                    //         ptr::addr_of_mut!(addr.sin_addr),
+                    //         ptr::read_unaligned::<in_addr>(
+                    //             ptr::addr_of!(state.gwy.addr.pfa) as *const _
+                    //         ),
+                    //     );
+                    //     addr.sin_port = actual_dst_port as libc::in_port_t;
+
+                    //     ptr::write(len, mem::size_of::<sockaddr_in>() as libc::socklen_t);
+                    //     Ok(())
+                    // })
+                    // .unwrap();
+                    // println!(
+                    //     "PF state lan: {:?}\n gwy: {:?}\n ext_lan: {:?}\n ext_gwy: {:?}\n peer_addr: {:?}",
+                    //     lan.as_socket(),
+                    //     gwy.as_socket(),
+                    //     ext_lan.as_socket(),
+                    //     ext_gwy.as_socket(),
+                    //     peer_addr,
+                    // );
 
                     let dst_addr_eq = libc::memcmp(
                         &bind_addr_pfaddr as *const _ as *const _,
@@ -301,8 +409,21 @@ impl PacketFilter {
                         ptr::addr_of!(state.ext_gwy.addr.pfa) as *const _,
                         mem::size_of::<pf_addr>(),
                     ) == 0;
+                    // println!("should eq: {}", ext_gwy.as_socket() == Some(*peer_addr));
+                    // println!("actually eq: {}", src_addr_eq);
+                    // println!(
+                    //     "src port: {} ext_gwy port: {} peer_addr port: {}",
+                    //     src_port.to_be(),
+                    //     ext_gwy.as_socket().unwrap().port(),
+                    //     peer_addr.port()
+                    // );
+                    // println!("actually port eq: {}", src_port.to_be() == peer_addr.port());
 
-                    if src_addr_eq && src_port == peer_addr.port() && dst_addr_eq && dst_port == bind_addr.port() {
+                    if src_addr_eq
+                        && src_port.to_be() == peer_addr.port()
+                        && dst_addr_eq
+                        && dst_port.to_be() == bind_addr.port()
+                    {
                         let actual_dst_addr = match state.af_gwy as libc::c_int {
                             libc::AF_INET => {
                                 let (_, actual_dst_addr) = SockAddr::try_init(|sockaddr, len| {
@@ -310,11 +431,17 @@ impl PacketFilter {
                                     addr.sin_family = libc::AF_INET as libc::sa_family_t;
                                     ptr::write_unaligned::<in_addr>(
                                         ptr::addr_of_mut!(addr.sin_addr),
-                                        ptr::read_unaligned::<in_addr>(ptr::addr_of!(state.gwy.addr.pfa) as *const _),
+                                        ptr::read_unaligned::<in_addr>(ptr::addr_of!(
+                                            state.gwy.addr.pfa
+                                        )
+                                            as *const _),
                                     );
                                     addr.sin_port = actual_dst_port as libc::in_port_t;
 
-                                    ptr::write(len, mem::size_of::<sockaddr_in>() as libc::socklen_t);
+                                    ptr::write(
+                                        len,
+                                        mem::size_of::<sockaddr_in>() as libc::socklen_t,
+                                    );
                                     Ok(())
                                 })
                                 .unwrap();
@@ -327,11 +454,17 @@ impl PacketFilter {
                                     addr.sin6_family = libc::AF_INET6 as libc::sa_family_t;
                                     ptr::write_unaligned::<in6_addr>(
                                         ptr::addr_of_mut!(addr.sin6_addr),
-                                        ptr::read_unaligned::<in6_addr>(ptr::addr_of!(state.gwy.addr.pfa) as *const _),
+                                        ptr::read_unaligned::<in6_addr>(ptr::addr_of!(
+                                            state.gwy.addr.pfa
+                                        )
+                                            as *const _),
                                     );
                                     addr.sin6_port = actual_dst_port as libc::in_port_t;
 
-                                    ptr::write(len, mem::size_of::<sockaddr_in6>() as libc::socklen_t);
+                                    ptr::write(
+                                        len,
+                                        mem::size_of::<sockaddr_in6>() as libc::socklen_t,
+                                    );
                                     Ok(())
                                 })
                                 .unwrap();
@@ -339,9 +472,10 @@ impl PacketFilter {
                                 actual_dst_addr
                             }
                             _ => {
-                                return Err(io::Error::other(
-                                    format!("state.af_gwy {} is not a valid address family", state.af_gwy),
-                                ));
+                                return Err(io::Error::other(format!(
+                                    "state.af_gwy {} is not a valid address family",
+                                    state.af_gwy
+                                )));
                             }
                         };
 
@@ -351,9 +485,10 @@ impl PacketFilter {
             }
         }
 
-        Err(io::Error::other(
-            format!("natlook UDP binding {}, {} not found", bind_addr, peer_addr),
-        ))
+        Err(io::Error::other(format!(
+            "natlook UDP binding {}, {} not found",
+            bind_addr, peer_addr
+        )))
     }
 }
 
@@ -365,7 +500,7 @@ impl Drop for PacketFilter {
     }
 }
 
-pub static PF: Lazy<PacketFilter> = Lazy::new(|| match PacketFilter::open() {
+pub static PF: LazyLock<PacketFilter> = LazyLock::new(|| match PacketFilter::open() {
     Ok(pf) => pf,
     Err(err) if err.kind() == ErrorKind::PermissionDenied => {
         panic!("open /dev/pf permission denied, consider restart with root user");

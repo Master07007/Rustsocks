@@ -1,4 +1,5 @@
 //! Extension trait for `TcpListener` and `UdpSocket`
+//! modified from shadowsocks-service/src/local/redir/redir_ext.rs
 
 use std::{
     future::Future,
@@ -8,17 +9,21 @@ use std::{
     task::{Context, Poll},
 };
 
-use crate::net::AcceptOpts;
+use crate::utils::net::AcceptOpts;
 use tokio::net::TcpListener;
 
-use crate::config::RedirType;
+use crate::utils::config::RedirType;
 
 /// Extension function for `TcpListener` for setting extra options before `bind()`
 pub trait TcpListenerRedirExt {
     // Create a TcpListener for transparent proxy
     //
     // Implementation is platform dependent
-    fn bind_redir(ty: RedirType, addr: SocketAddr, accept_opts: AcceptOpts) -> impl std::future::Future<Output = io::Result<TcpListener>> + Send;
+    fn bind_redir(
+        ty: RedirType,
+        addr: SocketAddr,
+        accept_opts: AcceptOpts,
+    ) -> impl std::future::Future<Output = io::Result<TcpListener>> + Send;
 }
 
 /// Extension function for `TcpStream` for reading original destination address

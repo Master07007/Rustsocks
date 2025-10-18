@@ -1,12 +1,8 @@
 //! Options for connecting to remote server
-use std::{
-    io,
-    mem,
-    net::SocketAddr,
-    os::unix::io::AsRawFd,
-    time::Duration,
-};
+//! modified from shadowsocks/src/net/option.rs
+
 use log::error;
+use std::{io, mem, net::SocketAddr, os::unix::io::AsRawFd, time::Duration};
 
 /// Options for connecting to TCP remote server
 #[derive(Debug, Clone, Default)]

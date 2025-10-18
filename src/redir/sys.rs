@@ -1,6 +1,7 @@
-use std::io;
+//! modified from shadowsocks-service/src/local/redir/sys/mod.rs
 
 use socket2::Socket;
+use std::io;
 
 #[cfg(unix)]
 #[allow(dead_code)]
