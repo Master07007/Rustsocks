@@ -46,7 +46,6 @@ pub async fn run(listener: UdpRedirSocket) {
     }
 }
 
-#[inline(always)]
 async fn handle_recv_result(
     recv_result: io::Result<(usize, SocketAddr, SocketAddr)>,
     pkt_buf: &[u8],

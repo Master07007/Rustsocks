@@ -110,7 +110,7 @@ async fn main() -> Result<()> {
         listen_addr_proxy,
         listen_addr_direct
     );
-    let udp_socket = UdpRedirSocket::listen(RedirType::PacketFilter, listen_addr_direct)?;
+    let udp_socket = UdpRedirSocket::listen(RedirType::PacketFilter, listen_addr_proxy)?;
 
     let results = join!(
         accept_stream_proxy(&listener_proxy, proxy_addr),

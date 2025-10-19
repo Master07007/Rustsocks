@@ -71,9 +71,9 @@ struct UdpHeader {
     check: u16,
 }
 
-const UDP_HEADER_LEN: u8 = mem::size_of::<UdpHeader>() as u8;
-const IP_HEADER_LEN: u8 = mem::size_of::<IpHeader>() as u8;
-const HEADER_LEN: u8 = UDP_HEADER_LEN + IP_HEADER_LEN;
+const UDP_HEADER_LEN: usize = mem::size_of::<UdpHeader>();
+const IP_HEADER_LEN: usize = mem::size_of::<IpHeader>();
+const HEADER_LEN: usize = UDP_HEADER_LEN + IP_HEADER_LEN;
 
 struct SendParam {
     len: size_t,
@@ -164,12 +164,7 @@ impl RawSocket {
                     return Err(err);
                 }
             } else {
-                let payload_len = n - HEADER_LEN as isize;
-                if payload_len >= 0 {
-                    return Ok(payload_len as usize);
-                } else {
-                    return Err(io::Error::other("payload len is smaller than 0 ?!"));
-                }
+                return Ok((n as usize).saturating_sub(HEADER_LEN));
             }
         }
     }

@@ -1,12 +1,8 @@
 use crate::{
-    udp_relay::{
-        MAXIMUM_UDP_PAYLOAD_SIZE, UDP_ASSOCIATION_SEND_CHANNEL_SIZE, checker::Checker,
-        receive::UdpReceiveManager,
-    },
-    utils::raw_socket::RawSocket,
+    udp_relay::{MAXIMUM_UDP_PAYLOAD_SIZE, UDP_ASSOCIATION_SEND_CHANNEL_SIZE, checker::Checker},
+    utils::{raw_socket::RawSocket, socks::BasicSocket},
 };
 use bytes::Bytes;
-
 use std::{
     io,
     net::{Ipv4Addr, SocketAddr},
@@ -18,18 +14,31 @@ use tokio::{
     task::JoinHandle,
 };
 
+pub struct Direct;
+pub struct Proxy(SocketAddr);
+
+trait BindAddr<S: BasicSocket> {
+    fn bind(&self, bind_addr: SocketAddr) -> impl Future<Output = io::Result<S>>;
+}
+
+impl BindAddr<UdpSocket> for Direct {
+    async fn bind(&self, bind_addr: SocketAddr) -> io::Result<UdpSocket> {
+        UdpSocket::bind(bind_addr).await
+    }
+}
+
 pub struct UdpSendWorker {
     sender: mpsc::Sender<(SocketAddr, Bytes)>,
     worker_handle: JoinHandle<()>,
 }
 
 impl UdpSendWorker {
-    pub fn new(
+    pub fn new<S: BasicSocket>(
         peer_addr: SocketAddr,
         keep_alive_sender: mpsc::Sender<SocketAddr>,
     ) -> io::Result<Self> {
         let (sender, receiver) = mpsc::channel(UDP_ASSOCIATION_SEND_CHANNEL_SIZE);
-        let mut dispatcher = Dispatcher::new(peer_addr, keep_alive_sender)?;
+        let mut dispatcher: Dispatcher<S> = Dispatcher::new(peer_addr, keep_alive_sender)?;
         let worker_handle = tokio::spawn(async move {
             dispatcher.dispatch_packet(receiver).await;
         });
@@ -50,14 +59,15 @@ impl UdpSendWorker {
 }
 
 // the servers and clients are N:N, we may need more sockets
-struct Dispatcher {
+struct Dispatcher<S: BasicSocket> {
     peer_addr: SocketAddr,
-    client_to_server: Option<UdpSocket>,
+    client_to_server: Option<S>,
     server_to_client: RawSocket,
     keep_alive_sender: mpsc::Sender<SocketAddr>,
     buffer: Box<[u8]>,
 }
-impl Dispatcher {
+
+impl<S: BasicSocket> Dispatcher<S> {
     fn new(peer_addr: SocketAddr, keep_alive_sender: mpsc::Sender<SocketAddr>) -> io::Result<Self> {
         let buffer = vec![0u8; MAXIMUM_UDP_PAYLOAD_SIZE].into_boxed_slice();
         let server_to_client =
@@ -141,7 +151,7 @@ impl Dispatcher {
             None => {
                 // create a new socket
                 let bind_addr: SocketAddr = SocketAddr::new(Ipv4Addr::UNSPECIFIED.into(), 0);
-                let socket = UdpSocket::bind(bind_addr).await?;
+                let socket = S::bind(bind_addr).await?;
                 self.client_to_server.insert(socket)
             }
         };
