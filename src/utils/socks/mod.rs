@@ -16,7 +16,6 @@ pub trait BasicSocket: Sized + Send + 'static {
         &self,
         buf: &mut [u8],
     ) -> impl Future<Output = io::Result<(usize, SocketAddr)>> + Send;
-    fn bind(bind_addr: SocketAddr) -> impl Future<Output = io::Result<Self>> + Send;
 }
 
 impl BasicSocket for UdpSocket {
@@ -30,9 +29,6 @@ impl BasicSocket for UdpSocket {
     async fn recv_from(&self, buf: &mut [u8]) -> io::Result<(usize, SocketAddr)> {
         self.recv_from(buf).await
     }
-    async fn bind(bind_addr: SocketAddr) -> io::Result<Self> {
-        UdpSocket::bind(bind_addr).await
-    }
 }
 
 impl BasicSocket for Socks5UdpClient {
@@ -40,12 +36,11 @@ impl BasicSocket for Socks5UdpClient {
     where
         SocketAddr: From<A>,
     {
-        self.send_to(0, buf, addr)
-            .await
-            .map_err(|e| io::Error::other(e))
+        let n = self.send_to(0, buf, addr).await?;
+        Ok(n)
     }
     async fn recv_from(&self, buf: &mut [u8]) -> io::Result<(usize, SocketAddr)> {
-        let (n, _, addr) = self.recv_from(buf).await.map_err(|e| io::Error::other(e))?;
+        let (n, _, addr) = self.recv_from(buf).await?;
         let addr = match addr {
             socks5::Address::SocketAddress(addr) => addr,
             _ => {
@@ -56,13 +51,5 @@ impl BasicSocket for Socks5UdpClient {
             }
         };
         Ok((n, addr))
-    }
-    async fn bind(bind_addr: SocketAddr) -> io::Result<Self> {
-        let mut socket = Socks5UdpClient::bind(bind_addr).await?;
-        socket
-            .associate("127.0.0.1:20170")
-            .await
-            .map_err(|e| io::Error::other(e))?;
-        Ok(socket)
     }
 }

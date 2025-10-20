@@ -1,6 +1,9 @@
 use crate::{
     udp_relay::{MAXIMUM_UDP_PAYLOAD_SIZE, UDP_ASSOCIATION_SEND_CHANNEL_SIZE, checker::Checker},
-    utils::{raw_socket::RawSocket, socks::BasicSocket},
+    utils::{
+        raw_socket::RawSocket,
+        socks::{BasicSocket, udp_client::Socks5UdpClient},
+    },
 };
 use bytes::Bytes;
 use std::{
@@ -14,16 +17,26 @@ use tokio::{
     task::JoinHandle,
 };
 
+#[derive(Debug, Clone, Copy)]
 pub struct Direct;
-pub struct Proxy(SocketAddr);
+#[derive(Debug, Clone, Copy)]
+pub struct Proxy(pub SocketAddr);
 
-trait BindAddr<S: BasicSocket> {
-    fn bind(&self, bind_addr: SocketAddr) -> impl Future<Output = io::Result<S>>;
+pub trait BindAddr<S: BasicSocket>: Send + Sync + 'static + Copy {
+    fn bind(&self, bind_addr: SocketAddr) -> impl Future<Output = io::Result<S>> + Send;
 }
 
 impl BindAddr<UdpSocket> for Direct {
     async fn bind(&self, bind_addr: SocketAddr) -> io::Result<UdpSocket> {
         UdpSocket::bind(bind_addr).await
+    }
+}
+
+impl BindAddr<Socks5UdpClient> for Proxy {
+    async fn bind(&self, bind_addr: SocketAddr) -> io::Result<Socks5UdpClient> {
+        let mut socket = Socks5UdpClient::bind(bind_addr).await?;
+        socket.associate(self.0).await?;
+        Ok(socket)
     }
 }
 
@@ -33,12 +46,13 @@ pub struct UdpSendWorker {
 }
 
 impl UdpSendWorker {
-    pub fn new<S: BasicSocket>(
+    pub fn new<S: BasicSocket, T: BindAddr<S>>(
         peer_addr: SocketAddr,
         keep_alive_sender: mpsc::Sender<SocketAddr>,
+        proxy_type: T,
     ) -> io::Result<Self> {
         let (sender, receiver) = mpsc::channel(UDP_ASSOCIATION_SEND_CHANNEL_SIZE);
-        let mut dispatcher: Dispatcher<S> = Dispatcher::new(peer_addr, keep_alive_sender)?;
+        let mut dispatcher = Dispatcher::new(peer_addr, keep_alive_sender, proxy_type)?;
         let worker_handle = tokio::spawn(async move {
             dispatcher.dispatch_packet(receiver).await;
         });
@@ -50,7 +64,7 @@ impl UdpSendWorker {
     pub fn send_to(&self, target: SocketAddr, data: Bytes) -> io::Result<()> {
         self.sender
             .try_send((target, data))
-            .map_err(|e| io::Error::other(e))
+            .map_err(io::Error::other)
     }
 
     pub fn worker_handle(&self) -> &JoinHandle<()> {
@@ -59,16 +73,21 @@ impl UdpSendWorker {
 }
 
 // the servers and clients are N:N, we may need more sockets
-struct Dispatcher<S: BasicSocket> {
+struct Dispatcher<S: BasicSocket, T: BindAddr<S>> {
     peer_addr: SocketAddr,
     client_to_server: Option<S>,
     server_to_client: RawSocket,
     keep_alive_sender: mpsc::Sender<SocketAddr>,
     buffer: Box<[u8]>,
+    proxy_type: T,
 }
 
-impl<S: BasicSocket> Dispatcher<S> {
-    fn new(peer_addr: SocketAddr, keep_alive_sender: mpsc::Sender<SocketAddr>) -> io::Result<Self> {
+impl<S: BasicSocket, T: BindAddr<S>> Dispatcher<S, T> {
+    fn new(
+        peer_addr: SocketAddr,
+        keep_alive_sender: mpsc::Sender<SocketAddr>,
+        proxy_type: T,
+    ) -> io::Result<Self> {
         let buffer = vec![0u8; MAXIMUM_UDP_PAYLOAD_SIZE].into_boxed_slice();
         let server_to_client =
             RawSocket::new().inspect_err(|_| log::error!("Can not create raw socket!"))?;
@@ -78,6 +97,7 @@ impl<S: BasicSocket> Dispatcher<S> {
             server_to_client,
             keep_alive_sender,
             buffer,
+            proxy_type,
         })
     }
 
@@ -151,11 +171,11 @@ impl<S: BasicSocket> Dispatcher<S> {
             None => {
                 // create a new socket
                 let bind_addr: SocketAddr = SocketAddr::new(Ipv4Addr::UNSPECIFIED.into(), 0);
-                let socket = S::bind(bind_addr).await?;
+                let socket = self.proxy_type.bind(bind_addr).await?;
                 self.client_to_server.insert(socket)
             }
         };
-        let n = socket.send_to(&data, target_addr).await?;
+        let n = socket.send_to(data, target_addr).await?;
         if n != data.len() {
             log::warn!(
                 "{} -> {} sent {} bytes != expected {} bytes",

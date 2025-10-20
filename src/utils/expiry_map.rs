@@ -13,7 +13,7 @@ pub struct ExpiryRefMut<'a, K, V> {
     entry_ref: RefMut<'a, K, (Instant, V)>,
 }
 
-impl<'a, K, V> Deref for ExpiryRefMut<'_, K, V>
+impl<K, V> Deref for ExpiryRefMut<'_, K, V>
 where
     K: std::hash::Hash + Eq,
 {
@@ -24,7 +24,7 @@ where
     }
 }
 
-impl<'a, K, V> DerefMut for ExpiryRefMut<'_, K, V>
+impl<K, V> DerefMut for ExpiryRefMut<'_, K, V>
 where
     K: std::hash::Hash + Eq,
 {

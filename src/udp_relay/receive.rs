@@ -24,10 +24,9 @@ impl UdpReceiveManager {
                 CONTEXT.nat_map.cleanup_expired();
             }
         });
-        let context = Context {
+        Context {
             nat_map: ExpiryMap::new(DEFAULT_UDP_EXPIRY_DURATION),
-        };
-        context
+        }
     }
 
     pub async fn send_to(

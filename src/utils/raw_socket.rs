@@ -15,6 +15,9 @@ struct Packet {
     layout: Layout,
 }
 
+// SAFETY: Packet manage its own memory and does not share it across threads
+unsafe impl Send for Packet {}
+
 impl Packet {
     fn new(buf: &[u8]) -> Self {
         unsafe {
@@ -82,9 +85,9 @@ struct SendParam {
     packet: Packet,
 }
 
-unsafe impl Send for SendParam {}
-
 impl UdpHeader {
+    /// TODO: we may need this to compute checksum later
+    #[allow(dead_code)]
     fn as_slice_mut(&mut self) -> &mut [u8] {
         // SAFETY: there is always only one mutable reference
         unsafe { slice::from_raw_parts_mut(self as *mut _ as *mut u8, mem::size_of::<UdpHeader>()) }
@@ -92,6 +95,8 @@ impl UdpHeader {
 }
 
 impl IpHeader {
+    /// TODO: we may need this to compute checksum later
+    #[allow(dead_code)]
     fn as_slice_mut(&mut self) -> &mut [u8] {
         // SAFETY: there is always only one mutable reference
         unsafe { slice::from_raw_parts_mut(self as *mut _ as *mut u8, mem::size_of::<IpHeader>()) }
@@ -121,7 +126,7 @@ impl RawSocket {
                 libc::close(fd);
                 return Err(std::io::Error::last_os_error());
             }
-            // these two operations will never fail
+            // according to the man page, these two operations will never fail
             let flags = libc::fcntl(fd, libc::F_GETFL);
             libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK);
             fd
@@ -219,7 +224,7 @@ impl RawSocket {
             len: packet.len() as size_t,
             addr: dst,
             addrlen: mem::size_of::<sockaddr_in>() as socklen_t,
-            packet: packet,
+            packet,
         }
     }
 }

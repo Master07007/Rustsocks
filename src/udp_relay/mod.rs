@@ -1,6 +1,7 @@
 use crate::{
     redir::redir_ext::UdpSocketRedirExt,
-    udp_relay::{macos::UdpRedirSocket, manager::UdpNatManager},
+    udp_relay::{macos::UdpRedirSocket, manager::UdpNatManager, send::BindAddr},
+    utils::socks::BasicSocket,
 };
 use bytes::Bytes;
 use std::{io, net::SocketAddr, time::Duration};
@@ -21,11 +22,15 @@ pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 /// Packet size for all UDP associations' send queue
 pub const UDP_ASSOCIATION_SEND_CHANNEL_SIZE: usize = 1024;
 
-pub async fn run(listener: UdpRedirSocket) {
+pub async fn run<S, T>(listener: UdpRedirSocket, proxy_type: T)
+where
+    S: BasicSocket,
+    T: BindAddr<S>,
+{
     let mut pkt_buf = vec![0u8; MAXIMUM_UDP_PAYLOAD_SIZE].into_boxed_slice();
     // NOTE: use default expiry duration, it may be not the best
     let mut cleanup_timer = time::interval(DEFAULT_UDP_EXPIRY_DURATION);
-    let (mut manager, mut keepalive_rx) = UdpNatManager::new();
+    let (mut manager, mut keepalive_rx) = UdpNatManager::new(proxy_type);
     loop {
         tokio::select! {
             _ = cleanup_timer.tick() => {
@@ -46,11 +51,14 @@ pub async fn run(listener: UdpRedirSocket) {
     }
 }
 
-async fn handle_recv_result(
+async fn handle_recv_result<S, T>(
     recv_result: io::Result<(usize, SocketAddr, SocketAddr)>,
     pkt_buf: &[u8],
-    manager: &mut UdpNatManager,
-) {
+    manager: &mut UdpNatManager<T, S>,
+) where
+    S: BasicSocket,
+    T: BindAddr<S>,
+{
     log::trace!("recv_dest_from:");
     let (recv_len, peer, dst) = match recv_result {
         Ok(o) => o,

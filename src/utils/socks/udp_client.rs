@@ -69,7 +69,7 @@ impl Socks5UdpClient {
     {
         self.check_associated()?;
         let target = Address::SocketAddress(target.into());
-        let header = UdpAssociateHeader::new(frag, target.into());
+        let header = UdpAssociateHeader::new(frag, target);
         let header_len = header.serialized_len();
         let mut send_buf = BytesMut::with_capacity(header.serialized_len() + buf.len());
         header.write_to_buf(&mut send_buf);
